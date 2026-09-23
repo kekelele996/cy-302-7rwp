@@ -40,3 +40,15 @@ func (r *Repository) ListAnswersByAttempt(ctx context.Context, attemptID uint) (
 	}
 	return items, nil
 }
+
+// ListAnswersByAttempts returns all answers for the given attempts.
+func (r *Repository) ListAnswersByAttempts(ctx context.Context, attemptIDs []uint) ([]model.Answer, error) {
+	items := make([]model.Answer, 0)
+	if len(attemptIDs) == 0 {
+		return items, nil
+	}
+	if err := r.db.WithContext(ctx).Where("attempt_id IN ?", attemptIDs).Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("list answers by attempts: %w", err)
+	}
+	return items, nil
+}

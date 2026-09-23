@@ -93,7 +93,7 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="statsVisible" title="成绩统计" width="800px">
+    <el-dialog v-model="statsVisible" title="成绩统计" width="900px">
       <div v-if="stats">
         <el-descriptions :column="3" border>
           <el-descriptions-item label="考试">{{ stats.exam_title }}</el-descriptions-item>
@@ -103,7 +103,39 @@
           <el-descriptions-item label="最低分">{{ stats.lowest_score }}</el-descriptions-item>
           <el-descriptions-item label="及格人数">{{ stats.pass_count }}</el-descriptions-item>
         </el-descriptions>
-        <el-table :data="stats.ranking" border style="margin-top: 12px">
+
+        <h3 class="stats-section-title">知识点掌握情况</h3>
+        <el-table
+          :data="stats.knowledge_points"
+          :row-class-name="kpRowClass"
+          border
+          style="margin-top: 8px"
+          :empty-text="'暂无有效作答数据'"
+        >
+          <el-table-column prop="knowledge_point" label="知识点" min-width="160" />
+          <el-table-column prop="question_count" label="题目数量" width="90" align="center" />
+          <el-table-column prop="participant_count" label="参与人数" width="90" align="center" />
+          <el-table-column label="平均得分率" width="130" align="center">
+            <template #default="{ row }">
+              <span :class="{ 'weak-text': row.weak }">{{ formatPercent(row.average_score_rate) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="客观题正确率" width="130" align="center">
+            <template #default="{ row }">
+              <span v-if="row.objective_accuracy === null" class="muted-text">—</span>
+              <span v-else>{{ formatPercent(row.objective_accuracy) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="掌握情况" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.weak" type="danger">薄弱项</el-tag>
+              <el-tag v-else type="success">正常</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <h3 class="stats-section-title">成绩排名</h3>
+        <el-table :data="stats.ranking" border style="margin-top: 8px">
           <el-table-column prop="rank" label="排名" width="80" />
           <el-table-column prop="student_name" label="姓名" />
           <el-table-column prop="student_username" label="用户名" />
@@ -119,7 +151,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { examApi } from '../api'
 import { useAuthStore } from '../stores/auth'
-import type { Exam, PaperQuestionConfig, ExamStatResponse } from '../types'
+import type { Exam, PaperQuestionConfig, ExamStatResponse, KnowledgePointStat } from '../types'
 
 const typeLabels: Record<string, string> = {
   single: '单选题',
@@ -218,6 +250,14 @@ async function viewStats(row: Exam) {
   statsVisible.value = true
 }
 
+function formatPercent(v: number): string {
+  return `${Number(v || 0).toFixed(1)}%`
+}
+
+function kpRowClass({ row }: { row: KnowledgePointStat }): string {
+  return row.weak ? 'weak-row' : ''
+}
+
 async function load() {
   loading.value = true
   try {
@@ -242,5 +282,19 @@ onMounted(load)
 .pager {
   margin-top: 16px;
   justify-content: flex-end;
+}
+.stats-section-title {
+  margin: 18px 0 0;
+  font-size: 15px;
+}
+.weak-text {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+.muted-text {
+  color: var(--el-text-color-placeholder);
+}
+:deep(.weak-row) {
+  background-color: var(--el-color-danger-light-9);
 }
 </style>
