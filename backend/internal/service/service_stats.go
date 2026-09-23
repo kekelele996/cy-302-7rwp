@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/gbexam/online-exam/internal/constants"
 	"github.com/gbexam/online-exam/internal/dto"
@@ -115,6 +116,11 @@ func (s *StatsService) ExamStats(ctx context.Context, role string, userID, examI
 		})
 	}
 
+	knowledgePoints, err := s.knowledgePointStats(ctx, examID, submitted)
+	if err != nil {
+		return nil, err
+	}
+
 	return &dto.ExamStatResponse{
 		ExamID:            exam.ID,
 		ExamTitle:         exam.Title,
@@ -125,7 +131,135 @@ func (s *StatsService) ExamStats(ctx context.Context, role string, userID, examI
 		PassCount:         passCount,
 		ScoreDistribution: buckets,
 		Ranking:           ranking,
+		KnowledgePoints:   knowledgePoints,
 	}, nil
+}
+
+// knowledgePointStats aggregates per-knowledge-point mastery from the answers
+// of submitted attempts. It reads current answer scores, so teacher re-grading
+// is reflected the next time statistics are requested.
+func (s *StatsService) knowledgePointStats(ctx context.Context, examID uint, submitted []model.ExamAttempt) ([]dto.KnowledgePointStat, error) {
+	items, err := s.repo.ListExamQuestions(ctx, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list exam questions: %w", err)
+	}
+	questionIDs := make([]uint, 0, len(items))
+	for _, it := range items {
+		questionIDs = append(questionIDs, it.QuestionID)
+	}
+	questions, err := s.repo.FindQuestionsByIDs(ctx, questionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("find questions by ids: %w", err)
+	}
+	answersByAttempt := make(map[uint][]model.Answer, len(submitted))
+	for _, a := range submitted {
+		answers, ansErr := s.repo.ListAnswersByAttempt(ctx, a.ID)
+		if ansErr != nil {
+			return nil, fmt.Errorf("list answers by attempt: %w", ansErr)
+		}
+		answersByAttempt[a.ID] = answers
+	}
+	return buildKnowledgePointStats(items, questions, answersByAttempt), nil
+}
+
+// weakKnowledgePointThreshold is the average score rate (percent) below which
+// a knowledge point is flagged as weak.
+const weakKnowledgePointThreshold = 60.0
+
+type knowledgePointAgg struct {
+	questionIDs  map[uint]struct{}
+	participants map[uint]struct{}
+	scoreSum     float64
+	maxSum       float64
+	objCorrect   int
+	objTotal     int
+}
+
+// buildKnowledgePointStats rolls up valid (non-empty) answers by knowledge
+// point. Knowledge points without any valid answer are omitted. The result is
+// sorted by average score rate ascending so weak spots surface first.
+func buildKnowledgePointStats(items []model.ExamQuestion, questions map[uint]model.Question, answersByAttempt map[uint][]model.Answer) []dto.KnowledgePointStat {
+	aggs := map[string]*knowledgePointAgg{}
+	order := []string{}
+	aggFor := func(kp string) *knowledgePointAgg {
+		agg, ok := aggs[kp]
+		if !ok {
+			agg = &knowledgePointAgg{
+				questionIDs:  map[uint]struct{}{},
+				participants: map[uint]struct{}{},
+			}
+			aggs[kp] = agg
+			order = append(order, kp)
+		}
+		return agg
+	}
+
+	for _, it := range items {
+		q, ok := questions[it.QuestionID]
+		if !ok {
+			continue
+		}
+		aggFor(q.KnowledgePoint).questionIDs[it.ID] = struct{}{}
+	}
+
+	for attemptID, answers := range answersByAttempt {
+		itemByID := make(map[uint]model.ExamQuestion, len(items))
+		for _, it := range items {
+			itemByID[it.ID] = it
+		}
+		for _, a := range answers {
+			if strings.TrimSpace(a.AnswerText) == "" {
+				continue
+			}
+			it, ok := itemByID[a.ExamQuestionID]
+			if !ok {
+				continue
+			}
+			q, ok := questions[it.QuestionID]
+			if !ok {
+				continue
+			}
+			agg := aggFor(q.KnowledgePoint)
+			agg.participants[attemptID] = struct{}{}
+			agg.scoreSum += a.Score
+			agg.maxSum += it.Score
+			if ObjectiveQuestionTypes()[q.Type] {
+				agg.objTotal++
+				if a.IsCorrect != nil && *a.IsCorrect {
+					agg.objCorrect++
+				}
+			}
+		}
+	}
+
+	stats := make([]dto.KnowledgePointStat, 0, len(order))
+	for _, kp := range order {
+		agg := aggs[kp]
+		if len(agg.participants) == 0 || agg.maxSum <= 0 {
+			continue
+		}
+		avgRate := round2(agg.scoreSum / agg.maxSum * 100)
+		var objAccuracy *float64
+		if agg.objTotal > 0 {
+			rate := round2(float64(agg.objCorrect) / float64(agg.objTotal) * 100)
+			objAccuracy = &rate
+		}
+		stats = append(stats, dto.KnowledgePointStat{
+			KnowledgePoint:    kp,
+			QuestionCount:     len(agg.questionIDs),
+			ParticipantCount:  len(agg.participants),
+			AvgScoreRate:      avgRate,
+			ObjectiveAccuracy: objAccuracy,
+			Weak:              avgRate < weakKnowledgePointThreshold,
+		})
+	}
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].AvgScoreRate != stats[j].AvgScoreRate {
+			return stats[i].AvgScoreRate < stats[j].AvgScoreRate
+		}
+		return stats[i].KnowledgePoint < stats[j].KnowledgePoint
+	})
+	return stats
 }
 
 func buildScoreBuckets(attempts []model.ExamAttempt, totalScore float64) []dto.ScoreBucket {

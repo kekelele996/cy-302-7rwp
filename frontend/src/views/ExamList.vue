@@ -103,7 +103,31 @@
           <el-descriptions-item label="最低分">{{ stats.lowest_score }}</el-descriptions-item>
           <el-descriptions-item label="及格人数">{{ stats.pass_count }}</el-descriptions-item>
         </el-descriptions>
-        <el-table :data="stats.ranking" border style="margin-top: 12px">
+
+        <h3 class="stats-section-title">知识点掌握情况</h3>
+        <el-table :data="stats.knowledge_points" border :row-class-name="weakRowClass">
+          <el-table-column prop="knowledge_point" label="知识点" min-width="140" />
+          <el-table-column prop="question_count" label="题目数量" width="90" />
+          <el-table-column prop="participant_count" label="参与人数" width="90" />
+          <el-table-column label="平均得分率" width="110">
+            <template #default="{ row }">{{ row.avg_score_rate }}%</template>
+          </el-table-column>
+          <el-table-column label="客观题正确率" width="110">
+            <template #default="{ row }">
+              {{ row.objective_accuracy === null ? '-' : row.objective_accuracy + '%' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag v-if="row.weak" type="danger">薄弱项</el-tag>
+              <el-tag v-else type="success">正常</el-tag>
+            </template>
+          </el-table-column>
+          <template #empty>暂无有效作答数据</template>
+        </el-table>
+
+        <h3 class="stats-section-title">排名</h3>
+        <el-table :data="stats.ranking" border>
           <el-table-column prop="rank" label="排名" width="80" />
           <el-table-column prop="student_name" label="姓名" />
           <el-table-column prop="student_username" label="用户名" />
@@ -218,6 +242,10 @@ async function viewStats(row: Exam) {
   statsVisible.value = true
 }
 
+function weakRowClass({ row }: { row: { weak: boolean } }) {
+  return row.weak ? 'weak-row' : ''
+}
+
 async function load() {
   loading.value = true
   try {
@@ -242,5 +270,15 @@ onMounted(load)
 .pager {
   margin-top: 16px;
   justify-content: flex-end;
+}
+.stats-section-title {
+  margin: 16px 0 8px;
+  font-size: 15px;
+}
+</style>
+
+<style>
+.el-table .weak-row {
+  --el-table-tr-bg-color: var(--el-color-danger-light-9);
 }
 </style>

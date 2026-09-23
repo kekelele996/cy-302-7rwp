@@ -167,6 +167,15 @@ export interface RankItem {
   submitted_at?: string | null
 }
 
+export interface KnowledgePointStat {
+  knowledge_point: string
+  question_count: number
+  participant_count: number
+  avg_score_rate: number
+  objective_accuracy: number | null
+  weak: boolean
+}
+
 export interface ExamStatResponse {
   exam_id: number
   exam_title: string
@@ -177,6 +186,7 @@ export interface ExamStatResponse {
   pass_count: number
   score_distribution: { label: string; count: number }[]
   ranking: RankItem[]
+  knowledge_points: KnowledgePointStat[]
 }
 
 export interface OverviewResponse {

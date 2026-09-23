@@ -178,7 +178,7 @@ npm run dev
 | POST | `/api/v1/exams/:id/close` | 关闭考试 | 管理员/教师 |
 | DELETE | `/api/v1/exams/:id` | 删除考试 | 管理员/教师 |
 | GET | `/api/v1/exams/:id/questions` | 查看试卷题目 | 管理员/教师 |
-| GET | `/api/v1/exams/:id/stats` | 考试成绩统计 | 管理员/教师 |
+| GET | `/api/v1/exams/:id/stats` | 考试成绩统计（含知识点掌握情况） | 管理员/教师 |
 | GET | `/api/v1/exams/:id/attempts` | 查看答题记录（批改列表） | 管理员/教师 |
 
 ### 考试作答
